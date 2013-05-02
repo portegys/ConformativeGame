@@ -6,30 +6,32 @@ import java.util.Random;
 import com.google.gwt.canvas.client.Canvas;
 import com.google.gwt.canvas.dom.client.Context2d;
 import com.google.gwt.canvas.dom.client.CssColor;
+import com.google.gwt.canvas.dom.client.TextMetrics;
 import com.google.gwt.i18n.client.NumberFormat;
 
 public class NormalDistribution
 {
-   public static final int      CANVAS_WIDTH        = 300;
-   public static final int      CANVAS_HEIGHT       = 300;
-   public static final int      CANVAS_BORDER       = 30;
-   public static final CssColor GRAPH_POINT_COLOR   = CssColor.make("rgba(150, 50, 50, 180)");
-   public static final int      GRAPH_POINT_WIDTH   = 4;
-   public static final int      NUM_PLOT_INTERVALS  = 20;
-   public static final int      NUMBERING_FREQUENCY = 5;
-   public static final int      NUM_SIGMAS          = 3;
-   public static final double   DEFAULT_MU          = 10.0;
-   public static final double   DEFAULT_SIGMA       = 2.0;
+   public static final int      CANVAS_WIDTH       = 300;
+   public static final int      CANVAS_HEIGHT      = 200;
+   public static final int      CANVAS_BORDER      = 30;
+   public static final CssColor GRAPH_POINT_COLOR  = CssColor.make("rgba(150, 50, 50, 180)");
+   public static final int      GRAPH_POINT_WIDTH  = 4;
+   public static final int      NUM_PLOT_INTERVALS = 20;
+   public static final int      X_NUM_FREQUENCY    = 5;
+   public static final int      Y_NUM_FREQUENCY    = 5;
+   public static final int      NUM_SIGMAS         = 3;
+   public static final double   DEFAULT_MEAN       = 10.0;
+   public static final double   DEFAULT_SIGMA      = 2.0;
    private Canvas               canvas;
-   private double               mu;
+   private double               mean;
    private double               sigma;
    private Random               random;
 
    // Constructors.
-   public NormalDistribution(Canvas canvas, double mu, double sigma)
+   public NormalDistribution(Canvas canvas, double mean, double sigma)
    {
       this.canvas = canvas;
-      this.mu     = mu;
+      this.mean   = mean;
       this.sigma  = sigma;
       random      = new Random();
    }
@@ -38,21 +40,21 @@ public class NormalDistribution
    public NormalDistribution(Canvas canvas)
    {
       this.canvas = canvas;
-      mu          = DEFAULT_MU;
+      mean        = DEFAULT_MEAN;
       sigma       = DEFAULT_SIGMA;
       random      = new Random();
    }
 
 
-   public double getMu()
+   public double getMean()
    {
-      return(mu);
+      return(mean);
    }
 
 
-   public void setMu(double mu)
+   public void setMean(double mean)
    {
-      this.mu = mu;
+      this.mean = mean;
    }
 
 
@@ -71,7 +73,7 @@ public class NormalDistribution
    // Get next value from distribution.
    public double nextValue()
    {
-      double result = (random.nextGaussian() * sigma) + mu;
+      double result = (random.nextGaussian() * sigma) + mean;
 
       if (result < 0.0)
       {
@@ -84,7 +86,7 @@ public class NormalDistribution
    // Get probability value for x.
    public double phi(double x)
    {
-      double d = x - mu;
+      double d = x - mean;
 
       return(Math.exp(-(d * d) / (2.0 * sigma * sigma)) / (sigma * Math.sqrt(2.0 * Math.PI)));
    }
@@ -95,20 +97,21 @@ public class NormalDistribution
    {
       int x0, y0, x1, y1, x2, y2;
 
+      if (canvas == null) { return; }
       canvas.setWidth(CANVAS_WIDTH + "px");
       canvas.setCoordinateSpaceWidth(CANVAS_WIDTH);
       canvas.setHeight(CANVAS_HEIGHT + "px");
       canvas.setCoordinateSpaceHeight(CANVAS_HEIGHT);
       Context2d context = canvas.getContext2d();
 
-      double xLow = mu - ((double)NUM_SIGMAS * sigma);
+      double xLow = mean - ((double)NUM_SIGMAS * sigma);
       if (xLow < 0.0)
       {
          xLow = 0.0;
       }
-      double xHigh     = mu + ((double)NUM_SIGMAS * sigma);
+      double xHigh     = mean + ((double)NUM_SIGMAS * sigma);
       double xInterval = (xHigh - xLow) / (double)NUM_PLOT_INTERVALS;
-      double yHigh     = phi(mu);
+      double yHigh     = phi(mean);
       double yInterval = yHigh / (double)NUM_PLOT_INTERVALS;
 
       double xScale = ((double)CANVAS_WIDTH - 2 * CANVAS_BORDER) / NUM_PLOT_INTERVALS;
@@ -146,9 +149,7 @@ public class NormalDistribution
       int          borderGap34   = (3 * CANVAS_BORDER) / 4;
       x0 = CANVAS_BORDER;
       x1 = GRAPH_POINT_WIDTH + CANVAS_BORDER;
-      int off1 = CANVAS_HEIGHT - ((CANVAS_HEIGHT - CANVAS_BORDER * 2) / NUM_PLOT_INTERVALS + CANVAS_BORDER);
-      int off2 = CANVAS_HEIGHT - ((2 * (CANVAS_HEIGHT - CANVAS_BORDER * 2)) / NUM_PLOT_INTERVALS + CANVAS_BORDER);
-      int off  = (off2 - off1) / 4;
+      int offset = (int)(context.measureText("O").getWidth() / 2.0);
       for (int i = 0; i <= NUM_PLOT_INTERVALS; i++)
       {
          y0 = CANVAS_HEIGHT - ((i * (CANVAS_HEIGHT - CANVAS_BORDER * 2)) / NUM_PLOT_INTERVALS + CANVAS_BORDER);
@@ -158,19 +159,16 @@ public class NormalDistribution
          context.lineTo(x1, y1);
          context.closePath();
          context.stroke();
-         if ((i % NUMBERING_FREQUENCY) == 0)
+         if ((i % Y_NUM_FREQUENCY) == 0)
          {
-            context.fillText(decimalFormat.format((double)i * yInterval), x0 - borderGap34, y0 - off);
+            context.fillText(decimalFormat.format((double)i * yInterval), x0 - borderGap34, y0 + offset);
          }
       }
 
       // Draw intervals x axis
       int borderGap2 = CANVAS_BORDER / 2;
-      y0   = CANVAS_HEIGHT - CANVAS_BORDER;
-      y1   = y0 - GRAPH_POINT_WIDTH;
-      off1 = (CANVAS_WIDTH - CANVAS_BORDER * 2) / NUM_PLOT_INTERVALS + CANVAS_BORDER;
-      off2 = 2 * (CANVAS_WIDTH - CANVAS_BORDER * 2) / NUM_PLOT_INTERVALS + CANVAS_BORDER;
-      off  = (off2 - off1) / 2;
+      y0 = CANVAS_HEIGHT - CANVAS_BORDER;
+      y1 = y0 - GRAPH_POINT_WIDTH;
       for (int i = 0; i <= NUM_PLOT_INTERVALS; i++)
       {
          x0 = i * (CANVAS_WIDTH - CANVAS_BORDER * 2) / NUM_PLOT_INTERVALS + CANVAS_BORDER;
@@ -180,9 +178,11 @@ public class NormalDistribution
          context.lineTo(x1, y1);
          context.closePath();
          context.stroke();
-         if ((i % NUMBERING_FREQUENCY) == 0)
+         if ((i % X_NUM_FREQUENCY) == 0)
          {
-            context.fillText(decimalFormat.format(graphXcoords[i]), x0 - off, y0 + borderGap2);
+            String      n       = decimalFormat.format(graphXcoords[i]);
+            TextMetrics metrics = context.measureText(n);
+            context.fillText(n, x0 - (int)(metrics.getWidth() / 2.0), y0 + borderGap2);
          }
       }
 

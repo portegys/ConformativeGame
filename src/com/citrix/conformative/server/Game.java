@@ -6,7 +6,7 @@ import javax.jdo.annotations.IdGeneratorStrategy;
 import javax.jdo.annotations.Persistent;
 import javax.jdo.annotations.PrimaryKey;
 import javax.jdo.annotations.PersistenceCapable;
-import java.io.Serializable;
+import com.citrix.conformative.shared.Shared;
 import com.google.appengine.api.datastore.Key;
 
 
@@ -26,12 +26,6 @@ public class Game
    @Persistent
    private double commonResources;
 
-   // State.
-   public static final int PENDING    = 0;
-   public static final int JOINING    = 1;
-   public static final int RUNNING    = 2;
-   public static final int COMPLETED  = 3;
-   public static final int TERMINATED = 4;
    @Persistent
    private int state;
 
@@ -40,7 +34,7 @@ public class Game
       this.code = code;
       this.initialCommonResources = initialCommonResources;
       commonResources             = initialCommonResources;
-      state = PENDING;
+      state = Shared.PENDING;
    }
 
 
