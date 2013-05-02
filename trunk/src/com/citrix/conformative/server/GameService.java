@@ -62,6 +62,9 @@ com.citrix.conformative.client.GameService
       Query playerQuery = pm.newQuery(Player.class );
       playerQuery.setFilter("gameCode == gameCodeParam && name == nameParam");
       playerQuery.declareParameters("String gameCodeParam, String nameParam");
+      Query transactionQuery = pm.newQuery(Transaction.class );
+      transactionQuery.setFilter("gameCode == gameCodeParam && number == numberParam");
+      transactionQuery.declareParameters("String gameCodeParam, int numberParam");
 
       // Do requested action.
       try
@@ -90,7 +93,7 @@ com.citrix.conformative.client.GameService
          ArrayList<PlayerProxy> players = new ArrayList<PlayerProxy>();
          if (game != null)
          {
-            if (game.getState() == Game.RUNNING)
+            if (game.getState() == Shared.RUNNING)
             {
                // List of players cached?
                players = (ArrayList<PlayerProxy> )cache.get(playerListKey);
@@ -144,7 +147,7 @@ com.citrix.conformative.client.GameService
                // Join game?
                if (player == null)
                {
-                  if (game.getState() == Game.JOINING)
+                  if (game.getState() == Shared.JOINING)
                   {
                      Player persistentPlayer = new Player(playerName, gameCode);
                      pm.makePersistent(persistentPlayer);
@@ -190,7 +193,7 @@ com.citrix.conformative.client.GameService
                // Quit game.
                if (player != null)
                {
-                  if (game.getState() != Game.RUNNING)
+                  if (game.getState() != Shared.RUNNING)
                   {
                      playerQuery.deletePersistentAll(gameCode, playerName);
                      DelimitedString clientId = new DelimitedString(gameCode);
@@ -223,7 +226,7 @@ com.citrix.conformative.client.GameService
             }
             else if (request.equals(Shared.HOST_CHAT) && (args.length == 4))
             {
-               // Host chat message.
+               // Relay chat from player to host.
                if (player != null)
                {
                   String clientId = gameCode;
@@ -332,7 +335,7 @@ com.citrix.conformative.client.GameService
                // Remove player.
                if (game != null)
                {
-                  if (game.getState() != Game.RUNNING)
+                  if (game.getState() != Shared.RUNNING)
                   {
                      String                 playerName  = args[2];
                      ArrayList<String>      playerNames = new ArrayList<String>();
@@ -441,7 +444,7 @@ com.citrix.conformative.client.GameService
             else if (request.equals(Shared.PLAYER_CHAT) &&
                      ((args.length == 3) || (args.length == 4)))
             {
-               // Player chat message.
+               // Relay chat from host to player.
                if (game != null)
                {
                   String playerName = null;
@@ -462,6 +465,685 @@ com.citrix.conformative.client.GameService
                   }
                }
                return(Shared.OK);
+            }
+            else if (request.equals(Shared.PLAYER_ALERT) &&
+                     ((args.length == 3) || (args.length == 4)))
+            {
+               // Relay alert from host to player.
+               if (game != null)
+               {
+                  String playerName = null;
+                  if (args.length == 4)
+                  {
+                     playerName = args[2];
+                  }
+                  for (int i = 0; i < players.size(); i++)
+                  {
+                     PlayerProxy player = players.get(i);
+                     if ((playerName == null) || player.getName().equals(playerName))
+                     {
+                        DelimitedString clientId = new DelimitedString();
+                        clientId.add(gameCode);
+                        clientId.add(player.getName());
+                        channelService.sendMessage(new ChannelMessage(clientId.toString(), input));
+                     }
+                  }
+               }
+               return(Shared.OK);
+            }
+            else if (request.equals(Shared.AUDITOR_CHAT) && (args.length == 4))
+            {
+               // Relay chat from claimant to auditors.
+               if (game != null)
+               {
+                  int number = Integer.parseInt(args[2]);
+                  @SuppressWarnings("unchecked")
+                  List<Transaction> transactions = (List<Transaction> )transactionQuery.execute(gameCode, number);
+                  Transaction transaction        = null;
+                  if (transactions.size() == 0)
+                  {
+                     return(Shared.error("transaction not found"));
+                  }
+                  else if (transactions.size() == 1)
+                  {
+                     transaction = transactions.get(0);
+                  }
+                  else
+                  {
+                     return(Shared.error("duplicate transactions"));
+                  }
+                  ArrayList<String> auditorNames = transaction.getAuditors();
+                  for (int i = 0; i < auditorNames.size(); i++)
+                  {
+                     DelimitedString clientId = new DelimitedString();
+                     clientId.add(gameCode);
+                     clientId.add(auditorNames.get(i));
+                     channelService.sendMessage(new ChannelMessage(clientId.toString(), input));
+                  }
+               }
+               return(Shared.OK);
+            }
+            else if (request.equals(Shared.CLAIMANT_CHAT) && (args.length == 4))
+            {
+               // Relay chat from auditor to claimant.
+               if (game != null)
+               {
+                  int number = Integer.parseInt(args[2]);
+                  @SuppressWarnings("unchecked")
+                  List<Transaction> transactions = (List<Transaction> )transactionQuery.execute(gameCode, number);
+                  Transaction transaction        = null;
+                  if (transactions.size() == 0)
+                  {
+                     return(Shared.error("transaction not found"));
+                  }
+                  else if (transactions.size() == 1)
+                  {
+                     transaction = transactions.get(0);
+                  }
+                  else
+                  {
+                     return(Shared.error("duplicate transactions"));
+                  }
+                  String          claimantName = transaction.getClaimant();
+                  DelimitedString clientId     = new DelimitedString();
+                  clientId.add(gameCode);
+                  clientId.add(claimantName);
+                  channelService.sendMessage(new ChannelMessage(clientId.toString(), input));
+               }
+               return(Shared.OK);
+            }
+            else if (request.equals(Shared.START_CLAIM) && (args.length == 7))
+            {
+               // Start a claim.
+               if (game != null)
+               {
+                  int         number      = Integer.parseInt(args[2]);
+                  Transaction transaction = new Transaction(gameCode, number);
+                  String      claimant    = args[3];
+                  transaction.setClaimant(claimant);
+                  double mean = Double.parseDouble(args[4]);
+                  transaction.setMean(mean);
+                  double sigma = Double.parseDouble(args[5]);
+                  transaction.setSigma(sigma);
+                  double entitlement = Double.parseDouble(args[6]);
+                  transaction.setEntitlement(entitlement);
+                  pm.makePersistent(transaction);
+                  DelimitedString clientId = new DelimitedString();
+                  clientId.add(gameCode);
+                  clientId.add(claimant);
+                  DelimitedString claimRequest = new DelimitedString(Shared.START_CLAIM);
+                  claimRequest.add(number);
+                  claimRequest.add(mean);
+                  claimRequest.add(sigma);
+                  claimRequest.add(entitlement);
+                  claimRequest.add(players.size());
+                  channelService.sendMessage(
+                     new ChannelMessage(clientId.toString(), claimRequest.toString()));
+                  return(Shared.OK);
+               }
+               else
+               {
+                  return(Shared.error("game not found"));
+               }
+            }
+            else if (request.equals(Shared.SET_CLAIM) && (args.length == 4))
+            {
+               // Set claim.
+               if (game != null)
+               {
+                  int number = Integer.parseInt(args[2]);
+                  @SuppressWarnings("unchecked")
+                  List<Transaction> transactions = (List<Transaction> )transactionQuery.execute(gameCode, number);
+                  Transaction transaction        = null;
+                  if (transactions.size() == 0)
+                  {
+                     return(Shared.error("transaction not found"));
+                  }
+                  else if (transactions.size() == 1)
+                  {
+                     transaction = transactions.get(0);
+                  }
+                  else
+                  {
+                     return(Shared.error("duplicate transactions"));
+                  }
+                  double claim = Double.parseDouble(args[3]);
+                  transaction.setClaim(claim);
+                  pm.makePersistent(transaction);
+                  DelimitedString clientId = new DelimitedString();
+                  clientId.add(gameCode);
+                  DelimitedString claimRequest = new DelimitedString(Shared.SET_CLAIM);
+                  claimRequest.add(number);
+                  claimRequest.add(claim);
+                  channelService.sendMessage(
+                     new ChannelMessage(clientId.toString(), claimRequest.toString()));
+                  return(Shared.OK);
+               }
+               else
+               {
+                  return(Shared.error("game not found"));
+               }
+            }
+            else if (request.equals(Shared.START_AUDIT) && (args.length >= 3))
+            {
+               // Start audit.
+               if (game != null)
+               {
+                  int number = Integer.parseInt(args[2]);
+                  @SuppressWarnings("unchecked")
+                  List<Transaction> transactions = (List<Transaction> )transactionQuery.execute(gameCode, number);
+                  Transaction transaction        = null;
+                  if (transactions.size() == 0)
+                  {
+                     return(Shared.error("transaction not found"));
+                  }
+                  else if (transactions.size() == 1)
+                  {
+                     transaction = transactions.get(0);
+                  }
+                  else
+                  {
+                     return(Shared.error("duplicate transactions"));
+                  }
+                  double claim = transaction.getClaim();
+                  if (args.length == 3)
+                  {
+                     transaction.setClaimantGrant(claim);
+                     String claimant = transaction.getClaimant();
+                     pm.makePersistent(transaction);
+                     DelimitedString clientId = new DelimitedString();
+                     clientId.add(gameCode);
+                     clientId.add(claimant);
+                     DelimitedString grantRequest = new DelimitedString(Shared.SET_GRANT);
+                     grantRequest.add(number);
+                     grantRequest.add(claim);
+                     channelService.sendMessage(
+                        new ChannelMessage(clientId.toString(), grantRequest.toString()));
+                  }
+                  else
+                  {
+                     String claimant = transaction.getClaimant();
+                     double mean     = transaction.getMean();
+                     double sigma    = transaction.getSigma();
+                     for (int i = 3; i < args.length; i++)
+                     {
+                        DelimitedString clientId = new DelimitedString();
+                        clientId.add(gameCode);
+                        String auditor = args[i];
+                        transaction.addAuditor(auditor);
+                        clientId.add(auditor);
+                        DelimitedString auditRequest = new DelimitedString(Shared.START_AUDIT);
+                        auditRequest.add(number);
+                        auditRequest.add(claimant);
+                        auditRequest.add(mean);
+                        auditRequest.add(sigma);
+                        auditRequest.add(claim);
+                        auditRequest.add(players.size());
+                        channelService.sendMessage(
+                           new ChannelMessage(clientId.toString(), auditRequest.toString()));
+                     }
+                     pm.makePersistent(transaction);
+                  }
+                  return(Shared.OK);
+               }
+               else
+               {
+                  return(Shared.error("game not found"));
+               }
+            }
+            else if (request.equals(Shared.SET_GRANT) && (args.length == 5))
+            {
+               // Set grant.
+               if (game != null)
+               {
+                  int number = Integer.parseInt(args[2]);
+                  @SuppressWarnings("unchecked")
+                  List<Transaction> transactions = (List<Transaction> )transactionQuery.execute(gameCode, number);
+                  Transaction transaction        = null;
+                  if (transactions.size() == 0)
+                  {
+                     return(Shared.error("transaction not found"));
+                  }
+                  else if (transactions.size() == 1)
+                  {
+                     transaction = transactions.get(0);
+                  }
+                  else
+                  {
+                     return(Shared.error("duplicate transactions"));
+                  }
+                  double grant       = Double.parseDouble(args[3]);
+                  String auditorName = args[4];
+                  transaction.addAuditorGrant(auditorName, grant);
+                  pm.makePersistent(transaction);
+                  DelimitedString clientId = new DelimitedString();
+                  clientId.add(gameCode);
+                  DelimitedString grantRequest = new DelimitedString(Shared.SET_GRANT);
+                  grantRequest.add(number);
+                  grantRequest.add(grant);
+                  grantRequest.add(auditorName);
+                  channelService.sendMessage(
+                     new ChannelMessage(clientId.toString(), grantRequest.toString()));
+                  return(Shared.OK);
+               }
+               else
+               {
+                  return(Shared.error("game not found"));
+               }
+            }
+            else if (request.equals(Shared.SET_GRANT) && (args.length == 4))
+            {
+               // Set consensus grant.
+               if (game != null)
+               {
+                  int number = Integer.parseInt(args[2]);
+                  @SuppressWarnings("unchecked")
+                  List<Transaction> transactions = (List<Transaction> )transactionQuery.execute(gameCode, number);
+                  Transaction transaction        = null;
+                  if (transactions.size() == 0)
+                  {
+                     return(Shared.error("transaction not found"));
+                  }
+                  else if (transactions.size() == 1)
+                  {
+                     transaction = transactions.get(0);
+                  }
+                  else
+                  {
+                     return(Shared.error("duplicate transactions"));
+                  }
+                  double grant = Double.parseDouble(args[3]);
+                  transaction.setClaimantGrant(grant);
+                  String            claimant = transaction.getClaimant();
+                  ArrayList<String> auditors = transaction.getAuditors();
+                  pm.makePersistent(transaction);
+                  DelimitedString clientId = new DelimitedString();
+                  clientId.add(gameCode);
+                  clientId.add(claimant);
+                  DelimitedString grantRequest = new DelimitedString(Shared.SET_GRANT);
+                  grantRequest.add(number);
+                  grantRequest.add(grant);
+                  channelService.sendMessage(
+                     new ChannelMessage(clientId.toString(), grantRequest.toString()));
+                  for (int i = 0; i < auditors.size(); i++)
+                  {
+                     clientId = new DelimitedString();
+                     clientId.add(gameCode);
+                     clientId.add(auditors.get(i));
+                     grantRequest = new DelimitedString(Shared.SET_GRANT);
+                     grantRequest.add(number);
+                     grantRequest.add(grant);
+                     channelService.sendMessage(
+                        new ChannelMessage(clientId.toString(), grantRequest.toString()));
+                  }
+                  return(Shared.OK);
+               }
+               else
+               {
+                  return(Shared.error("game not found"));
+               }
+            }
+            else if (request.equals(Shared.SET_PENALTY) && (args.length == 5))
+            {
+               // Set penalties.
+               if (game != null)
+               {
+                  int number = Integer.parseInt(args[2]);
+                  @SuppressWarnings("unchecked")
+                  List<Transaction> transactions = (List<Transaction> )transactionQuery.execute(gameCode, number);
+                  Transaction transaction        = null;
+                  if (transactions.size() == 0)
+                  {
+                     return(Shared.error("transaction not found"));
+                  }
+                  else if (transactions.size() == 1)
+                  {
+                     transaction = transactions.get(0);
+                  }
+                  else
+                  {
+                     return(Shared.error("duplicate transactions"));
+                  }
+                  double auditorPenaltyParameter  = Double.parseDouble(args[3]);
+                  double claimantPenaltyParameter = Double.parseDouble(args[4]);
+                  String claimant = transaction.getClaimant();
+                  double claim    = transaction.getClaim();
+                  double grant    = transaction.getClaimantGrant();
+                  double penalty  = (claim - grant) * claimantPenaltyParameter;
+                  transaction.setClaimantPenalty(penalty);
+                  ArrayList<String> auditors         = transaction.getAuditors();
+                  ArrayList<Double> auditorGrants    = transaction.getAuditorGrants();
+                  ArrayList<Double> auditorPenalties = new ArrayList<Double>();
+                  for (int i = 0; i < auditors.size(); i++)
+                  {
+                     Double auditorPenalty = new Double(Math.abs(grant - auditorGrants.get(i).doubleValue()) * auditorPenaltyParameter);
+                     auditorPenalties.add(auditorPenalty);
+                     transaction.addAuditorPenalty(auditors.get(i), auditorPenalty.doubleValue());
+                  }
+                  pm.makePersistent(transaction);
+                  DelimitedString clientId = new DelimitedString();
+                  clientId.add(gameCode);
+                  clientId.add(claimant);
+                  DelimitedString penaltyRequest = new DelimitedString(Shared.SET_PENALTY);
+                  penaltyRequest.add(number);
+                  penaltyRequest.add(penalty);
+                  channelService.sendMessage(
+                     new ChannelMessage(clientId.toString(), penaltyRequest.toString()));
+                  for (int i = 0; i < auditors.size(); i++)
+                  {
+                     clientId = new DelimitedString();
+                     clientId.add(gameCode);
+                     clientId.add(auditors.get(i));
+                     penaltyRequest = new DelimitedString(Shared.SET_PENALTY);
+                     penaltyRequest.add(number);
+                     penaltyRequest.add(auditorPenalties.get(i).doubleValue());
+                     channelService.sendMessage(
+                        new ChannelMessage(clientId.toString(), penaltyRequest.toString()));
+                  }
+                  return(Shared.OK);
+               }
+               else
+               {
+                  return(Shared.error("game not found"));
+               }
+            }
+            else if (request.equals(Shared.SET_DONATION) && (args.length == 5))
+            {
+               // Donate.
+               if (game != null)
+               {
+                  int    number      = Integer.parseInt(args[2]);
+                  double donation    = Double.parseDouble(args[3]);
+                  String beneficiary = args[4];
+                  int    i           = 0;
+                  for ( ; i < players.size(); i++)
+                  {
+                     if (beneficiary.equals(players.get(i).getName())) { break; }
+                  }
+                  if (i == players.size())
+                  {
+                     return(Shared.error("player not found"));
+                  }
+                  @SuppressWarnings("unchecked")
+                  List<Transaction> transactions = (List<Transaction> )transactionQuery.execute(gameCode, number);
+                  Transaction transaction        = null;
+                  if (transactions.size() == 0)
+                  {
+                     return(Shared.error("transaction not found"));
+                  }
+                  else if (transactions.size() == 1)
+                  {
+                     transaction = transactions.get(0);
+                  }
+                  else
+                  {
+                     return(Shared.error("duplicate transactions"));
+                  }
+                  transaction.addDonation(beneficiary, donation);
+                  pm.makePersistent(transaction);
+                  return(Shared.OK);
+               }
+               else
+               {
+                  return(Shared.error("game not found"));
+               }
+            }
+            else if (request.equals(Shared.FINISH_TRANSACTION) && (args.length == 4))
+            {
+               // Player transaction finish.
+               if (game != null)
+               {
+                  int number = Integer.parseInt(args[2]);
+                  @SuppressWarnings("unchecked")
+                  List<Transaction> transactions = (List<Transaction> )transactionQuery.execute(gameCode, number);
+                  Transaction transaction        = null;
+                  if (transactions.size() == 0)
+                  {
+                     return(Shared.error("transaction not found"));
+                  }
+                  else if (transactions.size() == 1)
+                  {
+                     transaction = transactions.get(0);
+                  }
+                  else
+                  {
+                     return(Shared.error("duplicate transactions"));
+                  }
+                  String          playerName = args[3];
+                  DelimitedString clientId   = new DelimitedString();
+                  clientId.add(gameCode);
+                  DelimitedString finishRequest = new DelimitedString(Shared.FINISH_TRANSACTION);
+                  finishRequest.add(number);
+                  finishRequest.add(playerName);
+                  channelService.sendMessage(
+                     new ChannelMessage(clientId.toString(), finishRequest.toString()));
+                  return(Shared.OK);
+               }
+               else
+               {
+                  return(Shared.error("game not found"));
+               }
+            }
+            else if (request.equals(Shared.FINISH_TRANSACTION) && (args.length == 3))
+            {
+               // Host transaction finish.
+               if (game != null)
+               {
+                  int number = Integer.parseInt(args[2]);
+                  @SuppressWarnings("unchecked")
+                  List<Transaction> transactions = (List<Transaction> )transactionQuery.execute(gameCode, number);
+                  Transaction transaction        = null;
+                  if (transactions.size() == 0)
+                  {
+                     return(Shared.error("transaction not found"));
+                  }
+                  else if (transactions.size() == 1)
+                  {
+                     transaction = transactions.get(0);
+                  }
+                  else
+                  {
+                     return(Shared.error("duplicate transactions"));
+                  }
+
+                  // Apply transaction to players.
+                  String      claimantName = transaction.getClaimant();
+                  PlayerProxy claimant     = null;
+                  int         i            = 0;
+                  for ( ; i < players.size(); i++)
+                  {
+                     claimant = players.get(i);
+                     if (claimantName.equals(claimant.getName())) { break; }
+                  }
+                  if (i == players.size())
+                  {
+                     return(Shared.error("claimant not found"));
+                  }
+                  @SuppressWarnings("unchecked")
+                  List<Player> claimants = (List<Player> )playerQuery.execute(gameCode, claimantName);
+                  if (claimants.size() == 0)
+                  {
+                     return(Shared.error("claimant not found"));
+                  }
+                  else if (claimants.size() > 1)
+                  {
+                     return(Shared.error("duplicate claimants"));
+                  }
+                  Player persistentClaimant = claimants.get(0);
+                  double entitlement        = claimant.getEntitledResources() + transaction.getEntitlement();
+                  claimant.setEntitledResources(entitlement);
+                  persistentClaimant.setEntitledResources(entitlement);
+                  double amount = claimant.getPersonalResources() - transaction.getEntitlement() +
+                                  transaction.getClaimantGrant() - transaction.getClaimantPenalty();
+                  claimant.setPersonalResources(amount);
+                  persistentClaimant.setPersonalResources(amount);
+                  ArrayList<String> auditorNames     = transaction.getAuditors();
+                  ArrayList<Double> auditorPenalties = transaction.getAuditorPenalties();
+                  for (i = 0; i < auditorNames.size(); i++)
+                  {
+                     String      auditorName = auditorNames.get(i);
+                     PlayerProxy auditor     = null;
+                     int         j           = 0;
+                     for ( ; j < players.size(); j++)
+                     {
+                        auditor = players.get(j);
+                        if (auditorName.equals(auditor.getName())) { break; }
+                     }
+                     if (j == players.size())
+                     {
+                        return(Shared.error("auditor not found"));
+                     }
+                     @SuppressWarnings("unchecked")
+                     List<Player> auditors = (List<Player> )playerQuery.execute(gameCode, auditorName);
+                     if (auditors.size() == 0)
+                     {
+                        return(Shared.error("auditor not found"));
+                     }
+                     else if (auditors.size() > 1)
+                     {
+                        return(Shared.error("duplicate auditors"));
+                     }
+                     Player persistentAuditor = auditors.get(0);
+                     amount = auditor.getPersonalResources() - auditorPenalties.get(i).doubleValue();
+                     auditor.setPersonalResources(amount);
+                     persistentAuditor.setPersonalResources(amount);
+                     pm.makePersistent(persistentAuditor);
+                  }
+                  ArrayList<String> beneficiaryNames = transaction.getBeneficiaries();
+                  ArrayList<Double> donations        = transaction.getDonations();
+                  double            donationTotal    = 0.0;
+                  for (i = 0; i < beneficiaryNames.size(); i++)
+                  {
+                     String      beneficiaryName = beneficiaryNames.get(i);
+                     PlayerProxy beneficiary     = null;
+                     int         j = 0;
+                     for ( ; j < players.size(); j++)
+                     {
+                        beneficiary = players.get(j);
+                        if (beneficiaryName.equals(beneficiary.getName())) { break; }
+                     }
+                     if (i == players.size())
+                     {
+                        return(Shared.error("beneficiary not found"));
+                     }
+                     @SuppressWarnings("unchecked")
+                     List<Player> beneficiaries = (List<Player> )playerQuery.execute(gameCode, beneficiaryName);
+                     if (beneficiaries.size() == 0)
+                     {
+                        return(Shared.error("beneficiary not found"));
+                     }
+                     else if (beneficiaries.size() > 1)
+                     {
+                        return(Shared.error("duplicate beneficiaries"));
+                     }
+                     Player persistentBeneficiary = beneficiaries.get(0);
+                     amount         = beneficiary.getPersonalResources() + donations.get(i).doubleValue();
+                     donationTotal += donations.get(i).doubleValue();
+                     beneficiary.setPersonalResources(amount);
+                     persistentBeneficiary.setPersonalResources(amount);
+                     pm.makePersistent(persistentBeneficiary);
+                  }
+                  amount = claimant.getPersonalResources() - donationTotal;
+                  claimant.setPersonalResources(amount);
+                  persistentClaimant.setPersonalResources(amount);
+                  pm.makePersistent(persistentClaimant);
+                  cache.put(playerListKey, players);
+
+                  // Apply transaction to game.
+                  amount = game.getCommonResources() - transaction.getClaimantGrant();
+                  game.setCommonResources(amount);
+                  if (persistentGame != null)
+                  {
+                     persistentGame.setCommonResources(amount);
+                  }
+                  else
+                  {
+                     @SuppressWarnings("unchecked")
+                     List<Game> games = (List<Game> )gameQuery.execute(gameCode);
+                     if (games.size() == 0)
+                     {
+                        return(Shared.error("game not found"));
+                     }
+                     else if (games.size() == 1)
+                     {
+                        persistentGame = games.get(0);
+                        persistentGame.setCommonResources(amount);
+                     }
+                     else
+                     {
+                        cache.remove(gameKey);
+                        return(Shared.error("duplicate game code"));
+                     }
+                  }
+                  pm.makePersistent(persistentGame);
+                  cache.put(gameKey, game);
+
+                  // Send notifications to participants.
+                  double          commonResources = game.getCommonResources() / (double)(players.size());
+                  DelimitedString clientId        = new DelimitedString();
+                  clientId.add(gameCode);
+                  clientId.add(claimantName);
+                  DelimitedString finishRequest = new DelimitedString(Shared.FINISH_TRANSACTION);
+                  finishRequest.add(number);
+                  finishRequest.add(claimant.getPersonalResources());
+                  finishRequest.add(commonResources);
+                  finishRequest.add(claimant.getEntitledResources());
+                  channelService.sendMessage(
+                     new ChannelMessage(clientId.toString(), finishRequest.toString()));
+                  for (i = 0; i < auditorNames.size(); i++)
+                  {
+                     String      auditorName = auditorNames.get(i);
+                     PlayerProxy auditor     = null;
+                     for (i = 0; i < players.size(); i++)
+                     {
+                        auditor = players.get(i);
+                        if (auditorName.equals(auditor.getName())) { break; }
+                     }
+                     if (i == players.size())
+                     {
+                        return(Shared.error("auditor not found"));
+                     }
+                     clientId = new DelimitedString();
+                     clientId.add(gameCode);
+                     clientId.add(auditorName);
+                     finishRequest = new DelimitedString(Shared.FINISH_TRANSACTION);
+                     finishRequest.add(number);
+                     finishRequest.add(auditor.getPersonalResources());
+                     finishRequest.add(commonResources);
+                     finishRequest.add(auditor.getEntitledResources());
+                     channelService.sendMessage(
+                        new ChannelMessage(clientId.toString(), finishRequest.toString()));
+                  }
+                  return(Shared.OK);
+               }
+               else
+               {
+                  return(Shared.error("game not found"));
+               }
+            }
+            else if (request.equals(Shared.ABORT_TRANSACTION) && (args.length >= 4))
+            {
+               // Abort transaction.
+               if (game != null)
+               {
+                  int number = Integer.parseInt(args[2]);
+                  transactionQuery.deletePersistentAll(gameCode, number);
+                  for (int i = 3; i < args.length; i++)
+                  {
+                     DelimitedString clientId = new DelimitedString();
+                     clientId.add(gameCode);
+                     clientId.add(args[i]);
+                     DelimitedString abortRequest = new DelimitedString(Shared.ABORT_TRANSACTION);
+                     abortRequest.add(number);
+                     channelService.sendMessage(
+                        new ChannelMessage(clientId.toString(), abortRequest.toString()));
+                  }
+                  return(Shared.OK);
+               }
+               else
+               {
+                  return(Shared.error("game not found"));
+               }
             }
          }
       }

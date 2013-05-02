@@ -11,15 +11,11 @@ public class PlayerProxy implements Serializable
    private double personalResources;
    private double entitledResources;
 
-   // Role.
-   private Player.ROLE role;
-
    // Construct proxy from persistent player.
    public PlayerProxy(Player persistentPlayer)
    {
       name              = persistentPlayer.getName();
       gameCode          = persistentPlayer.getGameCode();
-      role              = persistentPlayer.getRole();
       personalResources = persistentPlayer.getPersonalResources();
       entitledResources = persistentPlayer.getEntitledResources();
    }
@@ -58,17 +54,5 @@ public class PlayerProxy implements Serializable
    public void setEntitledResources(double entitledResources)
    {
       this.entitledResources = entitledResources;
-   }
-
-
-   public Player.ROLE getRole()
-   {
-      return(role);
-   }
-
-
-   public void setRole(Player.ROLE role)
-   {
-      this.role = role;
    }
 }

@@ -28,21 +28,10 @@ public class Player
    @Persistent
    private double entitledResources;
 
-   // Role.
-   public static enum ROLE
-   {
-      STAKEHOLDER,
-      CLAIMANT,
-      AUDITOR
-   };
-   @Persistent
-   private ROLE role;
-
    public Player(String name, String gameCode)
    {
       this.name         = name;
       this.gameCode     = gameCode;
-      role              = ROLE.STAKEHOLDER;
       personalResources = 0.0;
       entitledResources = 0.0;
    }
@@ -81,17 +70,5 @@ public class Player
    public void setEntitledResources(double entitledResources)
    {
       this.entitledResources = entitledResources;
-   }
-
-
-   public ROLE getRole()
-   {
-      return(role);
-   }
-
-
-   public void setRole(ROLE role)
-   {
-      this.role = role;
    }
 }
