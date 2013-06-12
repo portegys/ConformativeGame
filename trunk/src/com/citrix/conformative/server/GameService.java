@@ -1022,7 +1022,7 @@ com.citrix.conformative.client.GameService
                         beneficiary = players.get(j);
                         if (beneficiaryName.equals(beneficiary.getName())) { break; }
                      }
-                     if (i == players.size())
+                     if (j == players.size())
                      {
                         return(Shared.error("beneficiary not found"));
                      }
@@ -1094,12 +1094,13 @@ com.citrix.conformative.client.GameService
                   {
                      String      auditorName = auditorNames.get(i);
                      PlayerProxy auditor     = null;
-                     for (i = 0; i < players.size(); i++)
+                     int         j           = 0;
+                     for ( ; j < players.size(); j++)
                      {
-                        auditor = players.get(i);
+                        auditor = players.get(j);
                         if (auditorName.equals(auditor.getName())) { break; }
                      }
-                     if (i == players.size())
+                     if (j == players.size())
                      {
                         return(Shared.error("auditor not found"));
                      }
