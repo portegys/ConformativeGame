@@ -767,11 +767,6 @@ public class Player
             {
                return;
             }
-            if (channel == null)
-            {
-               Window.alert("Please create game!");
-               return;
-            }
             if (chatText.contains(DelimitedString.DELIMITER))
             {
                Window.alert("Invalid character: " + DelimitedString.DELIMITER);
